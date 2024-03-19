@@ -3,6 +3,7 @@ package view;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Point;
@@ -32,21 +33,22 @@ import model.Tile;
 public class HexPanel extends JPanel {
   private final int sideLen;
   private final int boardLen;
-  private final double hexSize = 5.0;
-  private final double circleRadius = hexSize * 0.5;
+  private static final double HEX_SIZE = 5.0;
+  private static final double CIRCLE_RADIUS = HEX_SIZE * 0.5;
   private final ReadonlyReversi model;
   private final Hexagon hexagon;
   private final Shape piece = new Ellipse2D.Double(
-          -circleRadius,     // left
-          -circleRadius,     // top
-          2 * circleRadius,  // width
-          2 * circleRadius); // height
-  private int highlightedQ = Integer.MIN_VALUE;
-  private int highlightedR = Integer.MIN_VALUE;
+          -CIRCLE_RADIUS,     // left
+          -CIRCLE_RADIUS,     // top
+          2 * CIRCLE_RADIUS,  // width
+          2 * CIRCLE_RADIUS); // height
+  private int clickedQ = Integer.MIN_VALUE;
+  private int clickedR = Integer.MIN_VALUE;
   private AxialCoords highlightedHex = null;
   private boolean clickedOutOfBounds = false;
   private final List<ViewFeatures> listeners = new ArrayList<>();
   private boolean playerActionsEnabled = true;
+  private Painter painter;
 
   /**
    * Constructs a HexPanel using information from the provided model.
@@ -57,11 +59,12 @@ public class HexPanel extends JPanel {
     boardLen = sideLen + sideLen - 1;
     setLayout(new BorderLayout());
     this.setPreferredSize(new Dimension(800, 800));
-    hexagon = new Hexagon(hexSize * 0.97);
+    hexagon = new Hexagon(HEX_SIZE * 0.97);
     this.model = model;
     MouseEventsListener mouseListener = new MouseEventsListener();
     this.addMouseListener(mouseListener);
     setUpKeyEvents();
+    this.painter = new DefaultPainter();
   }
 
   private void setUpKeyEvents() {
@@ -71,10 +74,11 @@ public class HexPanel extends JPanel {
     this.getActionMap().put("makeMove", new AbstractAction() {
       @Override
       public void actionPerformed(ActionEvent e) {
-        if ((highlightedQ != Integer.MIN_VALUE && highlightedR != Integer.MIN_VALUE)
+        if ((clickedQ != Integer.MIN_VALUE && clickedR != Integer.MIN_VALUE)
                 && playerActionsEnabled) {
+          highlightedHex = null;
           for (ViewFeatures f : listeners) {
-            f.makeMoveFeatures(highlightedQ, highlightedR);
+            f.makeMoveFeatures(clickedQ, clickedR);
             f.printToConsoleKey('m');
           }
         }
@@ -125,54 +129,110 @@ public class HexPanel extends JPanel {
     return ret;
   }
 
-  @Override
-  public void paintComponent(Graphics g) {
-    Graphics2D g2d = (Graphics2D) g.create();
-    g2d.transform(transformLogicalToPhysical());
-    g2d.setColor(Color.DARK_GRAY);
-    g2d.fill(g2d.getClipBounds());
-    g2d.setColor(Color.LIGHT_GRAY);
+  private interface Painter {
+    void paint(Graphics2D g2d);
+  }
 
-    // draws hexagons based on the model's game board
-    for (int i = 0; i < boardLen; i++) {
-      for (int j = 0; j < boardLen; j++) {
-        try {
-          Tile tile = model.getTileAt(i, j);
-          AxialCoords coords = AxialCoords.convert(i, j, sideLen);
-          drawAxialHexagon(g2d, coords);
+  private class DefaultPainter implements Painter {
 
-          // highlights proper hexagon and deselects when necessary
-          handleMouseClicks(g2d, coords, tile);
+    @Override
+    public void paint(Graphics2D g2d) {
+      g2d.transform(transformLogicalToPhysical());
+      g2d.setColor(Color.DARK_GRAY);
+      g2d.fill(g2d.getClipBounds());
+      g2d.setColor(Color.LIGHT_GRAY);
 
-          // draws a circle on top of the tile if it is claimed by a player
-          if (tile != Tile.EMPTY) {
-            if (tile == Tile.BLACK) {
-              drawCircle(g2d, coords, Color.BLACK);
-            } else {
-              drawCircle(g2d, coords, Color.WHITE);
+      // draws hexagons based on the model's game board
+      for (int i = 0; i < boardLen; i++) {
+        for (int j = 0; j < boardLen; j++) {
+          try {
+            Tile tile = model.getTileAt(i, j);
+            AxialCoords coords = AxialCoords.convert(i, j, sideLen);
+            drawAxialHexagon(g2d, coords);
+
+            // highlights proper hexagon and deselects when necessary
+            handleMouseClicks(g2d, coords, tile);
+
+            // draws a circle on top of the tile if it is claimed by a player
+            if (tile != Tile.EMPTY) {
+              if (tile == Tile.BLACK) {
+                drawCircle(g2d, coords, Color.BLACK);
+              } else {
+                drawCircle(g2d, coords, Color.WHITE);
+              }
             }
+          } catch (IllegalArgumentException e) {
+            // do nothing because there is no tile at this coordinate in the board
           }
-        } catch (IllegalArgumentException e) {
-          // do nothing because there is no tile at this coordinate in the board
         }
       }
     }
   }
 
+  private class HintingPainter implements Painter {
+
+    private final Painter painter;
+
+    public HintingPainter(Painter painter) {
+      this.painter = painter;
+//      setUpKeyEvents();
+    }
+
+    @Override
+    public void paint(Graphics2D g2d) {
+      painter.paint(g2d);
+      if (highlightedHex != null) {
+        Point2D pixelCoords = convertAxial(highlightedHex);
+        // Draw the score text
+        // calculates row and col based on highlighted axial coordinates
+        int calculatedRow = highlightedHex.getR() + (model.getSideLen() - 1);
+        int calculatedCol = highlightedHex.getQ() + (model.getSideLen() - 1);
+        int scoreOfMove = model.getScoreOfMove(calculatedRow, calculatedCol, model.getTurn());
+        String scoreText = String.valueOf(scoreOfMove);
+        Font originalFont = g2d.getFont();
+        Font smallerFont = originalFont.deriveFont(originalFont.getSize() - 10f);
+        g2d.setFont(smallerFont);
+        Color oldColor = g2d.getColor();
+        g2d.setColor(Color.BLACK);
+        g2d.drawString(scoreText, (int) (pixelCoords.getX()), (int) (pixelCoords.getY()) - 1);
+        g2d.setColor(oldColor);
+      }
+    }
+  }
+
+  /**
+   * Enables hints for this graphical user view.
+   * @param enable if true, hints are enabled; if false, hints are disabled
+   */
+  public void enableHints(boolean enable) {
+    this.painter = new DefaultPainter();
+    if (enable) {
+      this.painter = new HintingPainter(this.painter);
+    }
+  }
+
+  @Override
+  public void paintComponent(Graphics g) {
+    Graphics2D g2d = (Graphics2D) g.create();
+    painter.paint(g2d);
+  }
+
   private void handleMouseClicks(Graphics2D g2d, AxialCoords coords, Tile tile) {
     if (playerActionsEnabled) {
-      if (coords.getQ() == highlightedQ && coords.getR() == highlightedR && tile == Tile.EMPTY) {
+      if (coords.getQ() == clickedQ && coords.getR() == clickedR && tile == Tile.EMPTY) {
         // highlights proper hexagon
         g2d.setColor(Color.CYAN);
         drawAxialHexagon(g2d, coords);
         g2d.setColor(Color.LIGHT_GRAY);
 
         // if highlighted hexagon is clicked again, unhighlight it
-        if (highlightedHex != null && highlightedHex.getQ() == highlightedQ
-                && highlightedHex.getR() == highlightedR) {
+        if (highlightedHex != null && highlightedHex.getQ() == clickedQ
+                && highlightedHex.getR() == clickedR) {
           drawAxialHexagon(g2d, coords);
+          highlightedHex = null;
+        } else {
+          highlightedHex = coords;
         }
-        highlightedHex = coords;
       }
 
       // unhighlight the hexagon if clicked out of bounds
@@ -204,9 +264,9 @@ public class HexPanel extends JPanel {
   }
 
   // returns the center point of the given axial coordinate
-  private Point2D convertAxial(AxialCoords coords) {
-    return new Point2D.Double(coords.getQ() * Math.sqrt(3) * hexSize + Math.sqrt(3)
-            * hexSize / 2.0 * coords.getR(), coords.getR() * 3.0 * hexSize / 2.0);
+  public static Point2D convertAxial(AxialCoords coords) {
+    return new Point2D.Double(coords.getQ() * Math.sqrt(3) * HEX_SIZE + Math.sqrt(3)
+            * HEX_SIZE / 2.0 * coords.getR(), coords.getR() * 3.0 * HEX_SIZE / 2.0);
   }
 
   private AxialCoords getHexagonAtLogical(Point2D logicalPoint) {
@@ -218,7 +278,7 @@ public class HexPanel extends JPanel {
         Point2D hexagonCenter = convertAxial(coords);
         double distance = logicalPoint.distance(hexagonCenter);
 
-        if (distance < hexSize) {
+        if (distance < HEX_SIZE) {
           hexagon = coords;
         }
       }
@@ -234,11 +294,11 @@ public class HexPanel extends JPanel {
       AxialCoords hex = getHexagonAtLogical(logicalP);
       // if a hexagon exists at the given coordinates highlight it
       if (hex != null) {
-        highlightedQ = hex.getQ();
-        highlightedR = hex.getR();
+        clickedQ = hex.getQ();
+        clickedR = hex.getR();
         repaint();
         for (ViewFeatures f : listeners) {
-          f.printToConsoleClick(highlightedQ, highlightedR);
+          f.printToConsoleClick(clickedQ, clickedR);
         }
       } else {
         // if a hexagon does not exist, the click was made out of bounds and should unhighlight

@@ -28,7 +28,7 @@ public interface ReversiGUIView {
   /**
    * Prevents players from interacting with the view when it is not their turn.
    * Enables player-view interactions when it is the players turn.
-   * @param enable true if the view should be enabled, false otherwise
+   * @param enable true if the view should be enabled, false otherwise.
    */
   void enablePlayerActions(boolean enable);
 
@@ -36,4 +36,11 @@ public interface ReversiGUIView {
    * Shows an illegal move message to the user.
    */
   void showIllegalMoveMessage();
+
+  /**
+   * Toggles hints for the user.
+   * When enabled, it displays the added score of a selected tile.
+   * @param enable true if the hints should be enabled, false otherwise.
+   */
+  void toggleHints(boolean enable);
 }

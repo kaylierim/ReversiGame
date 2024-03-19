@@ -1,10 +1,11 @@
 package view;
 
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.util.Objects;
 
-import javax.swing.JFrame;
-import javax.swing.JOptionPane;
-import javax.swing.KeyStroke;
+import javax.swing.*;
 
 import model.ReadonlyReversi;
 
@@ -16,6 +17,7 @@ import model.ReadonlyReversi;
 public class ReversiGraphics extends JFrame implements ReversiGUIView {
   private final ReadonlyReversi model;
   private HexPanel hexPanel;
+  private boolean hints = false;
 
   /**
    * Constructs a new instance of ReversiGraphics with the specified
@@ -35,7 +37,18 @@ public class ReversiGraphics extends JFrame implements ReversiGUIView {
     this.setSize(800, 800);
     this.setLocationRelativeTo(null);
     this.hexPanel = new HexPanel(model);
-    this.add(hexPanel);
+    this.setLayout(new BorderLayout());
+    this.add(hexPanel, BorderLayout.CENTER);
+    JButton hintsButton = new JButton("Toggle hints");
+    this.add(hintsButton, BorderLayout.SOUTH);
+    hintsButton.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) {
+        toggleHints(!hints);
+        hints = !hints;
+        hexPanel.requestFocusInWindow();
+        System.out.printf("Hints: %s\n", hints ? "on" : "off");
+      }
+    });
     this.setVisible(true);
   }
 
@@ -58,5 +71,10 @@ public class ReversiGraphics extends JFrame implements ReversiGUIView {
   public void showIllegalMoveMessage() {
     JOptionPane.showMessageDialog(this, "Illegal Move for player",
             "Message", JOptionPane.ERROR_MESSAGE);
+  }
+
+  @Override
+  public void toggleHints(boolean enable) {
+    hexPanel.enableHints(enable);
   }
 }
